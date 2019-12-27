@@ -1,4 +1,8 @@
-﻿using System.IO;
+﻿using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+using System.Threading;
 
 namespace Compress.Lib
 {
@@ -6,34 +10,93 @@ namespace Compress.Lib
     {
         public bool Compress(int blockSize, Stream inputUncompressed, Stream outputCompressed)
         {
-            var blocks = (int)(inputUncompressed.Length / blockSize);
-            blocks += (inputUncompressed.Length % blockSize > 0) ? 1 : 0;
-            var buf = new byte[blockSize];
+            var blocksCount = (int)(inputUncompressed.Length / blockSize);
+            blocksCount += (inputUncompressed.Length % blockSize > 0) ? 1 : 0;
+            //var buf = new byte[blockSize];
             var offset = 0;
             var totalRead = 0;
-            byte[] dataForCompression;
-            using (var bw = new BinaryWriter(outputCompressed))
+            //var compressionThreads = new List<Thread>();
+            var compressionResults = new List<ThreadCompressWorkData>();
+            var index = 0;
+            var writeIndex = 0;
+
+            using (var outputWriter = new BinaryWriter(outputCompressed))
             {
-                bw.Write(blocks);
+                outputWriter.Write(blocksCount);
                 while (totalRead < inputUncompressed.Length)
                 {
-                    var actualRead = inputUncompressed.Read(buf, offset, blockSize);
-                    if (actualRead < buf.Length)
+                    while ((totalRead < inputUncompressed.Length) && compressionResults.Count < Environment.ProcessorCount)
                     {
-                        dataForCompression = new byte[actualRead];
-                        System.Array.Copy(buf, 0, dataForCompression, 0, actualRead);
+                        var buf = new byte[blockSize];
+                        var actualRead = inputUncompressed.Read(buf, offset, blockSize);
+                        byte[] dataForCompression;
+                        if (actualRead < buf.Length)
+                        {
+                            dataForCompression = new byte[actualRead];
+                            System.Array.Copy(buf, 0, dataForCompression, 0, actualRead);
+                        }
+                        else
+                        {
+                            dataForCompression = buf;
+                        }
+
+                        Thread t = new Thread(ThreadCompressWork);
+                        //compressionThreads.Add(t);
+                        var cr = new ThreadCompressWorkData(index, dataForCompression);
+                        compressionResults.Add(cr);
+                        t.Start(cr);
+                        //t.Join();
+
+                        //if(compressionThreads.Count == threadLimit)
+                        //{
+                        //    foreach(var compThread in compressionThreads)
+                        //    {
+                        //        compThread.Start();
+                        //        compThread.Join();
+                        //    }
+                        //}
+
+                        totalRead += actualRead;
+                        index += 1;
+
+                        //var completedThread = 
                     }
-                    else
+                    if (compressionResults.Count != 0)
                     {
-                        dataForCompression = buf;
+                        var next = compressionResults.SingleOrDefault(cr => cr.Index == writeIndex && cr.CompressionResults != null);
+                        if (next != null)
+                        {
+                            outputWriter.Write(next.CompressionResults.CompressedBlock);
+                            compressionResults.Remove(next);
+                            writeIndex += 1;
+                        }
                     }
-                    var compressedBlock = CompressBlock(dataForCompression);
-                    bw.Write(compressedBlock);
-                    totalRead += actualRead;
                 }
-                bw.Flush();
+
+
+                while (compressionResults.Count != 0)
+                {
+                    var next = compressionResults.SingleOrDefault(cr => cr.Index == writeIndex && cr.CompressionResults != null);
+                    if (next != null)
+                    {
+                        outputWriter.Write(next.CompressionResults.CompressedBlock);
+                        compressionResults.Remove(next);
+                        writeIndex += 1;
+                    }
+                }
+
+                outputWriter.Flush();
             }
             return true;
+        }
+
+        private void ThreadCompressWork(object obj)
+        {
+            var threadData = (ThreadCompressWorkData)obj;
+            var compressedBlock = CompressBlock(threadData.DataForCompression);
+            threadData.CompressionResults = new ThreadCompressionWorkResult(threadData.Index, compressedBlock);
+
+            //threadData.OutputWriter.Write(compressedBlock);
         }
 
         public bool Decompress(Stream inputComressed, Stream outputUncompressed)
