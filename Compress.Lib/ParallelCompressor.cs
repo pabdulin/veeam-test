@@ -45,6 +45,7 @@ namespace Compress.Lib
                         var cr = new ThreadCompressWorkData(index, dataForCompression);
                         compressionResults.Add(cr);
                         t.Start(cr);
+                        Console.WriteLine($"Thread {index} started");
                         //t.Join();
 
                         //if(compressionThreads.Count == threadLimit)
@@ -60,15 +61,35 @@ namespace Compress.Lib
                         index += 1;
 
                         //var completedThread = 
+                        while (compressionResults.Count != 0)
+                        {
+                            var next = compressionResults.SingleOrDefault(cr => cr.Index == writeIndex && cr.CompressionResults != null);
+                            if (next != null)
+                            {
+                                outputWriter.Write(next.CompressionResults.CompressedBlock);
+                                compressionResults.Remove(next);
+                                Console.WriteLine($"Thread {writeIndex} completed and written to output");
+                                writeIndex += 1;
+                            }
+                            else
+                            {
+                                break;
+                            }
+                        }
                     }
-                    if (compressionResults.Count != 0)
+                    while (compressionResults.Count != 0)
                     {
                         var next = compressionResults.SingleOrDefault(cr => cr.Index == writeIndex && cr.CompressionResults != null);
                         if (next != null)
                         {
                             outputWriter.Write(next.CompressionResults.CompressedBlock);
                             compressionResults.Remove(next);
+                            Console.WriteLine($"Thread {writeIndex} completed and written to output");
                             writeIndex += 1;
+                        }
+                        else
+                        {
+                            break;
                         }
                     }
                 }
@@ -81,6 +102,7 @@ namespace Compress.Lib
                     {
                         outputWriter.Write(next.CompressionResults.CompressedBlock);
                         compressionResults.Remove(next);
+                        Console.WriteLine($"Thread {writeIndex} completed and written to output");
                         writeIndex += 1;
                     }
                 }
