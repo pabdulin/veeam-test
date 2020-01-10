@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Threading;
+using System.IO.Compression;
 
 namespace Compress.Lib
 {
@@ -129,8 +130,8 @@ namespace Compress.Lib
                 var blocksCount = br.ReadInt32();
                 for (int i = 0; i < blocksCount; i += 1)
                 {
-                    var blockSize = br.ReadInt32();
-                    var blockData = br.ReadBytes(blockSize);
+                    var compressedBlockSize = br.ReadInt32();
+                    var blockData = br.ReadBytes(compressedBlockSize);
                     var uncompressedData = DecompressData(blockData);
                     bw.Write(uncompressedData);
                 }
@@ -154,12 +155,31 @@ namespace Compress.Lib
 
         private byte[] CompressData(byte[] dataUncompressed)
         {
-            return dataUncompressed;
+            using (MemoryStream compressedOutput = new MemoryStream())
+            {
+                using (GZipStream compressionStream = new GZipStream(compressedOutput, CompressionLevel.Optimal, leaveOpen: true))
+                {
+                    compressionStream.Write(dataUncompressed, 0, dataUncompressed.Length);
+
+                }
+                return compressedOutput.ToArray();
+            }
         }
 
         private byte[] DecompressData(byte[] dataCompressed)
         {
-            return dataCompressed;
+
+            using (MemoryStream decompressedOutput = new MemoryStream())
+            {
+                using (MemoryStream compressedInput = new MemoryStream(dataCompressed))
+                {
+                    using (GZipStream decompressionStream = new GZipStream(compressedInput, CompressionMode.Decompress, leaveOpen: true))
+                    {
+                        decompressionStream.CopyTo(decompressedOutput);
+                    }
+                }
+                return decompressedOutput.ToArray();
+            }
         }
     }
 }
