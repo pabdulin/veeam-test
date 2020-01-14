@@ -1,15 +1,19 @@
-﻿namespace Compress.Lib
+﻿using System.IO;
+
+namespace Compress.Lib
 {
     public class ThreadCompressWorkData
     {
-        public int BlockIndex { get; }
-        public byte[] DataForCompression { get; private set; }
-        public volatile byte[] CompressedBlock;
+        public int BlockIndex;
+        public byte[] DataForCompression;
+        public readonly BinaryWriter OutputWriter;
+        public byte[] CompressedBlock;
 
-        public ThreadCompressWorkData(int index, byte[] dataForCompression)
+        public ThreadCompressWorkData(int index, byte[] dataForCompression, System.IO.BinaryWriter outputWriter)
         {
             BlockIndex = index;
             DataForCompression = dataForCompression;
+            OutputWriter = outputWriter;
         }
     }
 }
