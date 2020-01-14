@@ -11,19 +11,17 @@ namespace Compress.Lib
     {
         public bool Compress(int blockSize, Stream inputUncompressed, Stream outputCompressed)
         {
-            var blocksCount = (int)(inputUncompressed.Length / blockSize);
-            blocksCount += (inputUncompressed.Length % blockSize > 0) ? 1 : 0;
-            //var buf = new byte[blockSize];
+            var workBlocksCount = (int)(inputUncompressed.Length / blockSize);
+            workBlocksCount += (inputUncompressed.Length % blockSize > 0) ? 1 : 0;
             var offset = 0;
             var totalRead = 0;
-            //var compressionThreads = new List<Thread>();
             var compressionResults = new List<ThreadCompressWorkData>();
-            var index = 0;
-            var writeIndex = 0;
+            var currentWorkBlock = 0;
+            var nextWorkBlockToWriteIndex = 0;
 
             using (var outputWriter = new BinaryWriter(outputCompressed))
             {
-                outputWriter.Write(blocksCount);
+                outputWriter.Write(workBlocksCount);
                 while (totalRead < inputUncompressed.Length)
                 {
                     while ((totalRead < inputUncompressed.Length) && compressionResults.Count < Environment.ProcessorCount)
@@ -41,85 +39,77 @@ namespace Compress.Lib
                             dataForCompression = buf;
                         }
 
-                        Thread t = new Thread(ThreadCompressWork);
-                        //compressionThreads.Add(t);
-                        var cr = new ThreadCompressWorkData(index, dataForCompression);
-                        compressionResults.Add(cr);
-                        t.Start(cr);
-                        Console.WriteLine($"Thread {index} started");
-                        //t.Join();
-
-                        //if(compressionThreads.Count == threadLimit)
-                        //{
-                        //    foreach(var compThread in compressionThreads)
-                        //    {
-                        //        compThread.Start();
-                        //        compThread.Join();
-                        //    }
-                        //}
+                        var compressionWork = new Thread(ThreadCompressWork);
+                        var compressionWorkData = new ThreadCompressWorkData(currentWorkBlock, dataForCompression);
+                        compressionResults.Add(compressionWorkData);
+                        compressionWork.Start(compressionWorkData);
+                        // TODO: remove debug
+                        Console.WriteLine($"New thread for block index={currentWorkBlock} started");
 
                         totalRead += actualRead;
-                        index += 1;
+                        currentWorkBlock += 1;
 
-                        //var completedThread = 
-                        while (compressionResults.Count != 0)
-                        {
-                            var next = compressionResults.SingleOrDefault(cr => cr.Index == writeIndex && cr.CompressionResults != null);
-                            if (next != null)
-                            {
-                                outputWriter.Write(next.CompressionResults.CompressedBlock);
-                                compressionResults.Remove(next);
-                                Console.WriteLine($"Thread {writeIndex} completed and written to output");
-                                writeIndex += 1;
-                            }
-                            else
-                            {
-                                break;
-                            }
-                        }
+                        nextWorkBlockToWriteIndex = WriteFinishedThreads(compressionResults, nextWorkBlockToWriteIndex, outputWriter, waitTillEnd: false);
                     }
-                    while (compressionResults.Count != 0)
+                    var prevIndex = nextWorkBlockToWriteIndex;
+                    nextWorkBlockToWriteIndex = WriteFinishedThreads(compressionResults, nextWorkBlockToWriteIndex, outputWriter, waitTillEnd: false);
+                    if (nextWorkBlockToWriteIndex - prevIndex == 0)
                     {
-                        var next = compressionResults.SingleOrDefault(cr => cr.Index == writeIndex && cr.CompressionResults != null);
-                        if (next != null)
-                        {
-                            outputWriter.Write(next.CompressionResults.CompressedBlock);
-                            compressionResults.Remove(next);
-                            Console.WriteLine($"Thread {writeIndex} completed and written to output");
-                            writeIndex += 1;
-                        }
-                        else
-                        {
-                            break;
-                        }
+                        // TODO: remove debug
+                        Console.WriteLine($"Nothing to do, sleep a bit...");
+                        Thread.Sleep(10);
                     }
                 }
-
-
-                while (compressionResults.Count != 0)
-                {
-                    var next = compressionResults.SingleOrDefault(cr => cr.Index == writeIndex && cr.CompressionResults != null);
-                    if (next != null)
-                    {
-                        outputWriter.Write(next.CompressionResults.CompressedBlock);
-                        compressionResults.Remove(next);
-                        Console.WriteLine($"Thread {writeIndex} completed and written to output");
-                        writeIndex += 1;
-                    }
-                }
-
+                WriteFinishedThreads(compressionResults, nextWorkBlockToWriteIndex, outputWriter, waitTillEnd: true);
                 outputWriter.Flush();
             }
             return true;
         }
 
+        private static int WriteFinishedThreads(
+            List<ThreadCompressWorkData> compressionResults,
+            int nextWorkBlockToWriteIndex,
+            BinaryWriter outputWriter,
+            bool waitTillEnd)
+        {
+            while (compressionResults.Count != 0)
+            {
+                var nextCompletedWork = compressionResults.FirstOrDefault(cr => cr.Index == nextWorkBlockToWriteIndex && cr.CompressedBlock != null);
+                if (nextCompletedWork != null)
+                {
+                    outputWriter.Write(nextCompletedWork.CompressedBlock);
+                    compressionResults.Remove(nextCompletedWork);
+                    // TODO: remove debug
+                    Console.WriteLine($"Thread for block index={nextWorkBlockToWriteIndex} completed and written to output stream");
+                    nextWorkBlockToWriteIndex += 1;
+                }
+                else
+                {
+                    if (!waitTillEnd)
+                    {
+                        break;
+                    }
+                    else
+                    {
+                        // TODO: remove debug
+                        Console.WriteLine($"Nothing to do, sleep a bit...");
+                        Thread.Sleep(10);
+                    }
+                }
+            }
+
+            return nextWorkBlockToWriteIndex;
+        }
+
+        private System.Random r = new Random();
+
         private void ThreadCompressWork(object obj)
         {
             var threadData = (ThreadCompressWorkData)obj;
             var compressedBlock = CompressBlock(threadData.DataForCompression);
-            threadData.CompressionResults = new ThreadCompressionWorkResult(threadData.Index, compressedBlock);
-
-            //threadData.OutputWriter.Write(compressedBlock);
+            // TODO: remove debug
+            Thread.Sleep(100 + r.Next(20, 40));
+            threadData.CompressedBlock = compressedBlock;
         }
 
         public bool Decompress(Stream inputComressed, Stream outputUncompressed)
