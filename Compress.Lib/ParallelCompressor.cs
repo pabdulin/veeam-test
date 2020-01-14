@@ -9,25 +9,33 @@ namespace Compress.Lib
 {
     public class ParallelCompressor
     {
-        public bool Compress(int blockSize, Stream inputUncompressed, Stream outputCompressed)
+        // TODO remove debug
+        private System.Random r = new Random();
+        private int _compressionBlockSize;
+
+        public ParallelCompressor(int compressionBlockSize)
         {
-            var workBlocksCount = (int)(inputUncompressed.Length / blockSize);
-            workBlocksCount += (inputUncompressed.Length % blockSize > 0) ? 1 : 0;
+            _compressionBlockSize = compressionBlockSize;
+        }
+
+        public bool Compress(Stream inputUncompressed, Stream outputCompressed)
+        {
+            var workBlocksCount = (int)(inputUncompressed.Length / _compressionBlockSize);
+            workBlocksCount += (inputUncompressed.Length % _compressionBlockSize > 0) ? 1 : 0;
             var offset = 0;
             var totalRead = 0;
-            var compressionResults = new List<ThreadCompressWorkData>();
+            var compressionWorkThreads = new List<ThreadCompressWorkData>();
             var currentWorkBlock = 0;
-            var nextWorkBlockToWriteIndex = 0;
 
             using (var outputWriter = new BinaryWriter(outputCompressed))
             {
                 outputWriter.Write(workBlocksCount);
                 while (totalRead < inputUncompressed.Length)
                 {
-                    while ((totalRead < inputUncompressed.Length) && compressionResults.Count < Environment.ProcessorCount)
+                    while ((totalRead < inputUncompressed.Length) && compressionWorkThreads.Count < Environment.ProcessorCount)
                     {
-                        var buf = new byte[blockSize];
-                        var actualRead = inputUncompressed.Read(buf, offset, blockSize);
+                        var buf = new byte[_compressionBlockSize];
+                        var actualRead = inputUncompressed.Read(buf, offset, _compressionBlockSize);
                         byte[] dataForCompression;
                         if (actualRead < buf.Length)
                         {
@@ -41,7 +49,7 @@ namespace Compress.Lib
 
                         var compressionWork = new Thread(ThreadCompressWork);
                         var compressionWorkData = new ThreadCompressWorkData(currentWorkBlock, dataForCompression);
-                        compressionResults.Add(compressionWorkData);
+                        compressionWorkThreads.Add(compressionWorkData);
                         compressionWork.Start(compressionWorkData);
                         // TODO: remove debug
                         Console.WriteLine($"New thread for block index={currentWorkBlock} started");
@@ -49,43 +57,34 @@ namespace Compress.Lib
                         totalRead += actualRead;
                         currentWorkBlock += 1;
 
-                        nextWorkBlockToWriteIndex = WriteFinishedThreads(compressionResults, nextWorkBlockToWriteIndex, outputWriter, waitTillEnd: false);
+                        //WriteFinishedThreads(compressionWorkThreads, outputWriter, waitTillEnd: false);
                     }
-                    var prevIndex = nextWorkBlockToWriteIndex;
-                    nextWorkBlockToWriteIndex = WriteFinishedThreads(compressionResults, nextWorkBlockToWriteIndex, outputWriter, waitTillEnd: false);
-                    if (nextWorkBlockToWriteIndex - prevIndex == 0)
-                    {
-                        // TODO: remove debug
-                        Console.WriteLine($"Nothing to do, sleep a bit...");
-                        Thread.Sleep(10);
-                    }
+                    WriteFinishedThreads(compressionWorkThreads, outputWriter, writeAll: false);
                 }
-                WriteFinishedThreads(compressionResults, nextWorkBlockToWriteIndex, outputWriter, waitTillEnd: true);
+                WriteFinishedThreads(compressionWorkThreads, outputWriter, writeAll: true);
                 outputWriter.Flush();
             }
             return true;
         }
 
-        private static int WriteFinishedThreads(
+        private static void WriteFinishedThreads(
             List<ThreadCompressWorkData> compressionResults,
-            int nextWorkBlockToWriteIndex,
             BinaryWriter outputWriter,
-            bool waitTillEnd)
+            bool writeAll)
         {
             while (compressionResults.Count != 0)
             {
-                var nextCompletedWork = compressionResults.FirstOrDefault(cr => cr.Index == nextWorkBlockToWriteIndex && cr.CompressedBlock != null);
+                var nextCompletedWork = compressionResults.FirstOrDefault(cr => cr.CompressedBlock != null);
                 if (nextCompletedWork != null)
                 {
                     outputWriter.Write(nextCompletedWork.CompressedBlock);
                     compressionResults.Remove(nextCompletedWork);
                     // TODO: remove debug
-                    Console.WriteLine($"Thread for block index={nextWorkBlockToWriteIndex} completed and written to output stream");
-                    nextWorkBlockToWriteIndex += 1;
+                    Console.WriteLine($"Thread for block index={nextCompletedWork.BlockIndex} completed and written to output stream");
                 }
                 else
                 {
-                    if (!waitTillEnd)
+                    if (!writeAll)
                     {
                         break;
                     }
@@ -93,23 +92,30 @@ namespace Compress.Lib
                     {
                         // TODO: remove debug
                         Console.WriteLine($"Nothing to do, sleep a bit...");
-                        Thread.Sleep(10);
+                        DataWriteIdle();
                     }
                 }
             }
-
-            return nextWorkBlockToWriteIndex;
         }
 
-        private System.Random r = new Random();
+        private static void DataWriteIdle()
+        {
+            Thread.Sleep(10);
+        }
 
         private void ThreadCompressWork(object obj)
         {
             var threadData = (ThreadCompressWorkData)obj;
-            var compressedBlock = CompressBlock(threadData.DataForCompression);
-            // TODO: remove debug
-            Thread.Sleep(100 + r.Next(20, 40));
+            var compressedBlock = GetCompressedBlockData(threadData);
+#if DEBUG
+            EmulateWorkTime(threadData);
+#endif
             threadData.CompressedBlock = compressedBlock;
+        }
+
+        private static void EmulateWorkTime(ThreadCompressWorkData threadData)
+        {
+            Thread.Sleep(threadData.BlockIndex % 10);
         }
 
         public bool Decompress(Stream inputComressed, Stream outputUncompressed)
@@ -120,9 +126,11 @@ namespace Compress.Lib
                 var blocksCount = br.ReadInt32();
                 for (int i = 0; i < blocksCount; i += 1)
                 {
+                    var blockIndex = br.ReadInt32();
                     var compressedBlockSize = br.ReadInt32();
                     var blockData = br.ReadBytes(compressedBlockSize);
                     var uncompressedData = DecompressData(blockData);
+                    bw.Seek(blockIndex * _compressionBlockSize, SeekOrigin.Begin);
                     bw.Write(uncompressedData);
                 }
                 bw.Flush();
@@ -130,12 +138,13 @@ namespace Compress.Lib
             return true;
         }
 
-        public byte[] CompressBlock(byte[] dataUncompressed)
+        public byte[] GetCompressedBlockData(ThreadCompressWorkData workData)
         {
+            var compressedData = CompressData(workData.DataForCompression);
             using (var ms = new MemoryStream())
             using (var result = new BinaryWriter(ms))
             {
-                var compressedData = CompressData(dataUncompressed);
+                result.Write(workData.BlockIndex);
                 result.Write(compressedData.Length);
                 result.Write(compressedData);
                 result.Flush();

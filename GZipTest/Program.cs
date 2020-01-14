@@ -15,16 +15,16 @@ namespace GZipTest
                 var outputFile = args[2];
                 if (string.Compare(op, "compress", StringComparison.OrdinalIgnoreCase) == 0)
                 {
-                    var pc = new Compress.Lib.ParallelCompressor();
+                    var pc = new Compress.Lib.ParallelCompressor(blockSize);
                     using (var inStream = File.OpenRead(inputFile))
                     using (var outStream = File.OpenWrite(outputFile))
                     {
-                        pc.Compress(blockSize, inStream, outStream);
+                        pc.Compress(inStream, outStream);
                     }
                 }
                 else if (string.Compare(op, "decompress", StringComparison.OrdinalIgnoreCase) == 0)
                 {
-                    var pc = new Compress.Lib.ParallelCompressor();
+                    var pc = new Compress.Lib.ParallelCompressor(blockSize);
                     using (var inStream = File.OpenRead(inputFile))
                     using (var outStream = File.OpenWrite(outputFile))
                     {
