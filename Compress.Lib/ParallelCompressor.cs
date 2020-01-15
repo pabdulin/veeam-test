@@ -85,7 +85,7 @@ namespace Compress.Lib
 
             var compressedBlock = GetCompressedBlockData(threadData);
 #if DEBUG
-            EmulateWorkTime(threadData);
+            EmulateWorkTime(threadData.BlockIndex);
 #endif
             threadData.CompressedBlock = compressedBlock;
             lock (_threadLock)
@@ -96,9 +96,9 @@ namespace Compress.Lib
             Console.WriteLine($"Thread for block index={threadData.BlockIndex} completed and written to output stream");
         }
 
-        private static void EmulateWorkTime(ThreadCompressWorkData threadData)
+        private static void EmulateWorkTime(int blockIndex)
         {
-            Thread.Sleep(threadData.BlockIndex % 10);
+            Thread.Sleep(blockIndex % 10);
         }
 
         public bool Decompress(Stream inputCompressed, Stream outputUncompressed)
@@ -111,8 +111,15 @@ namespace Compress.Lib
             {
                 var blocksCount = br.ReadInt32();
 
-                for (int i = 0; i < blocksCount; i += 1)
+                var currentWorkBlock = 0;
+                while (currentWorkBlock <= blocksCount)
                 {
+                    if (_runningThreads >= Environment.ProcessorCount)
+                    {
+                        MaxReasonableThreadsIdle();
+                        continue;
+                    }
+
                     var blockIndex = br.ReadInt32();
                     var compressedBlockSize = br.ReadInt32();
                     var blockData = br.ReadBytes(compressedBlockSize);
@@ -122,6 +129,7 @@ namespace Compress.Lib
                     var decompressionWorkData = new ThreadDecompressWorkData(blockIndex, blockData, bw);
                     _runningThreads += 1;
                     decompressionWork.Start(decompressionWorkData);
+                    currentWorkBlock += 1;
                 }
 
                 foreach (var dt in decompressionWorkThreads)
@@ -143,6 +151,9 @@ namespace Compress.Lib
             Console.WriteLine($"New decompression thread for block={threadData.BlockIndex} started");
 
             var uncompressedData = DecompressData(threadData.CompressedData);
+#if DEBUG
+            EmulateWorkTime(threadData.BlockIndex);
+#endif
             lock (_threadLock)
             {
                 threadData.OutputStream.Seek(threadData.BlockIndex * _compressionBlockSize, SeekOrigin.Begin);
