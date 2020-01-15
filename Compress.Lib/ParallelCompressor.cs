@@ -92,7 +92,7 @@ namespace Compress.Lib
 
                     var decompressionWork = new Thread(ThreadDecompressWork);
                     decompressionWorkThreads.Add(decompressionWork);
-                    var decompressionWorkData = new ThreadDecompressWorkData(blockIndex, blockData, blockSize, decompressedOutput);
+                    var decompressionWorkData = new ThreadDecompressWorkData(blockIndex, blockData, decompressedOutput, blockSize);
                     _runningThreads += 1;
                     decompressionWork.Start(decompressionWorkData);
                     currentWorkBlock += 1;
