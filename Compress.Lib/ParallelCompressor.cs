@@ -60,37 +60,6 @@ namespace Compress.Lib
             return true;
         }
 
-        private static void AwaitRemainingRunningThreads(List<Thread> threads)
-        {
-            foreach (var compressionThread in threads)
-            {
-                if (compressionThread.IsAlive)
-                {
-                    compressionThread.Join();
-                }
-            }
-        }
-
-        private static void MaxReasonableThreadsIdle()
-        {
-            Thread.Sleep(10);
-        }
-
-        private void ThreadCompressWork(object obj)
-        {
-            var threadData = (ThreadCompressWorkData)obj;
-            using (MemoryStream compressedBlock = new MemoryStream())
-            {
-                GetCompressedBlockData(threadData, compressedBlock);
-                compressedBlock.Seek(0, SeekOrigin.Begin);
-                lock (_threadLock)
-                {
-                    compressedBlock.CopyTo(threadData.OutputWriter.BaseStream);
-                    _runningThreads -= 1;
-                }
-            }
-        }
-
         public bool Decompress(Stream inputCompressed, Stream outputUncompressed)
         {
             var decompressionWorkThreads = new List<Thread>();
@@ -134,19 +103,54 @@ namespace Compress.Lib
             return true;
         }
 
-        private void ThreadDecompressWork(object obj)
+        private static void AwaitRemainingRunningThreads(List<Thread> threads)
         {
-            var threadData = (ThreadDecompressWorkData)obj;
-            var uncompressedData = DecompressData(threadData.CompressedData);
-            lock (_threadLock)
+            foreach (var compressionThread in threads)
             {
-                threadData.OutputStream.Seek(threadData.BlockIndex * threadData.BlockSize, SeekOrigin.Begin);
-                threadData.OutputStream.Write(uncompressedData);
-                _runningThreads -= 1;
+                if (compressionThread.IsAlive)
+                {
+                    compressionThread.Join();
+                }
             }
         }
 
-        public void GetCompressedBlockData(ThreadCompressWorkData workData, MemoryStream compressedBlockOutput)
+        private static void MaxReasonableThreadsIdle()
+        {
+            Thread.Sleep(10);
+        }
+
+        private void ThreadCompressWork(object obj)
+        {
+            var threadData = (ThreadCompressWorkData)obj;
+            using (MemoryStream compressedBlock = new MemoryStream())
+            {
+                GetCompressedBlockData(threadData, compressedBlock);
+                compressedBlock.Seek(0, SeekOrigin.Begin);
+                lock (_threadLock)
+                {
+                    compressedBlock.CopyTo(threadData.OutputWriter.BaseStream);
+                    _runningThreads -= 1;
+                }
+            }
+        }
+
+        private void ThreadDecompressWork(object obj)
+        {
+            var threadData = (ThreadDecompressWorkData)obj;
+            using (MemoryStream decompressedOutput = new MemoryStream())
+            {
+                GetDecompressedBlockData(threadData.CompressedData, decompressedOutput);
+                decompressedOutput.Seek(0, SeekOrigin.Begin);
+                lock (_threadLock)
+                {
+                    threadData.OutputStream.Seek(threadData.BlockIndex * threadData.BlockSize, SeekOrigin.Begin);
+                    decompressedOutput.CopyTo(threadData.OutputStream.BaseStream);
+                    _runningThreads -= 1;
+                }
+            }
+        }
+
+        private void GetCompressedBlockData(ThreadCompressWorkData workData, MemoryStream compressedBlockOutput)
         {
             using (MemoryStream compressedOutput = new MemoryStream())
             {
@@ -165,18 +169,14 @@ namespace Compress.Lib
             }
         }
 
-        private byte[] DecompressData(byte[] dataCompressed)
+        private void GetDecompressedBlockData(byte[] dataCompressed, MemoryStream decompressedOutput)
         {
-            using (MemoryStream decompressedOutput = new MemoryStream())
+            using (MemoryStream compressedInput = new MemoryStream(dataCompressed))
             {
-                using (MemoryStream compressedInput = new MemoryStream(dataCompressed))
+                using (GZipStream decompressionStream = new GZipStream(compressedInput, CompressionMode.Decompress, leaveOpen: true))
                 {
-                    using (GZipStream decompressionStream = new GZipStream(compressedInput, CompressionMode.Decompress, leaveOpen: true))
-                    {
-                        decompressionStream.CopyTo(decompressedOutput);
-                    }
+                    decompressionStream.CopyTo(decompressedOutput);
                 }
-                return decompressedOutput.ToArray();
             }
         }
     }
