@@ -28,7 +28,8 @@ namespace Compress.Lib
             {
                 outputWriter.Write(workBlocksCount);
 
-                for (int currentWorkBlock = 0; currentWorkBlock < workBlocksCount; currentWorkBlock += 1)
+                var currentWorkBlock = 0;
+                while (currentWorkBlock <= workBlocksCount)
                 {
                     if (_runningThreads >= Environment.ProcessorCount)
                     {
@@ -54,6 +55,7 @@ namespace Compress.Lib
                     var compressionWorkData = new ThreadCompressWorkData(currentWorkBlock, dataForCompression, outputWriter);
                     _runningThreads += 1;
                     compressionWork.Start(compressionWorkData);
+                    currentWorkBlock += 1;
                 }
 
                 foreach (var compressionThread in compressionWorkThreads)
