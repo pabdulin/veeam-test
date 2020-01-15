@@ -17,7 +17,7 @@ namespace Compress.Lib.Tests
             using (var inStream = File.OpenRead(inputFile))
             using (var outStream = File.OpenWrite(outputFile))
             {
-                pc.Decompress(inputComressed: inStream, outputUncompressed: outStream);
+                pc.Decompress(inputCompressed: inStream, outputUncompressed: outStream);
             }
         }
 
