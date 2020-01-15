@@ -66,7 +66,6 @@ namespace Compress.Lib
             var decompressionWorkThreads = new List<Thread>();
 
             using (var compressedInput = new BinaryReader(inputCompressed))
-            using (var decompressedOutput = new BinaryWriter(outputUncompressed))
             {
                 var magic = compressedInput.ReadInt32();
                 if (magic != ArchiveMagic)
@@ -92,7 +91,7 @@ namespace Compress.Lib
 
                     var decompressionWork = new Thread(ThreadDecompressWork);
                     decompressionWorkThreads.Add(decompressionWork);
-                    var decompressionWorkData = new ThreadDecompressWorkData(blockIndex, blockData, decompressedOutput, blockSize);
+                    var decompressionWorkData = new ThreadDecompressWorkData(blockIndex, blockData, blockSize, outputUncompressed);
                     _runningThreads += 1;
                     decompressionWork.Start(decompressionWorkData);
                     currentWorkBlock += 1;
@@ -145,8 +144,8 @@ namespace Compress.Lib
                 lock (_threadLock)
                 {
                     var offset = (long)threadData.BlockIndex * threadData.BlockSize;
-                    threadData.OutputStream.BaseStream.Seek(offset, SeekOrigin.Begin);
-                    decompressedOutput.CopyTo(threadData.OutputStream.BaseStream);
+                    threadData.OutputStream.Seek(offset, SeekOrigin.Begin);
+                    decompressedOutput.CopyTo(threadData.OutputStream);
                     _runningThreads -= 1;
                 }
             }

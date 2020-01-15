@@ -6,14 +6,14 @@ namespace Compress.Lib
     {
         public readonly int BlockIndex;
         public readonly byte[] CompressedData;
-        public readonly BinaryWriter OutputStream;
+        public readonly Stream OutputStream;
         public readonly int BlockSize;
 
-        public ThreadDecompressWorkData(int blockIndex, byte[] blockData, BinaryWriter bw, int blockSize)
+        public ThreadDecompressWorkData(int blockIndex, byte[] compressedData, int blockSize, Stream outputStream)
         {
             BlockIndex = blockIndex;
-            CompressedData = blockData;
-            OutputStream = bw;
+            CompressedData = compressedData;
+            OutputStream = outputStream;
             BlockSize = blockSize;
         }
     }
