@@ -144,7 +144,8 @@ namespace Compress.Lib
                 decompressedOutput.Seek(0, SeekOrigin.Begin);
                 lock (_threadLock)
                 {
-                    threadData.OutputStream.Seek(threadData.BlockIndex * threadData.BlockSize, SeekOrigin.Begin);
+                    var offset = (long)threadData.BlockIndex * threadData.BlockSize;
+                    threadData.OutputStream.BaseStream.Seek(offset, SeekOrigin.Begin);
                     decompressedOutput.CopyTo(threadData.OutputStream.BaseStream);
                     _runningThreads -= 1;
                 }
