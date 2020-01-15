@@ -12,12 +12,18 @@ namespace Compress.Lib
         private const int DefaultBlockSize = 1024 * 1024;
         private readonly object _threadLock = new object();
         private int _runningThreads;
+        private Stack<byte[]> _buffers = new Stack<byte[]>();
 
         public bool Compress(Stream inputUncompressed, Stream outputCompressed, int compressionBlockSize = DefaultBlockSize)
         {
             var workBlocksCount = (int)(inputUncompressed.Length / compressionBlockSize);
             workBlocksCount += (inputUncompressed.Length % compressionBlockSize > 0) ? 1 : 0;
             var compressionWorkThreads = new List<Thread>();
+
+            for (int i = 0; i < Environment.ProcessorCount; i += 1)
+            {
+                _buffers.Push(new byte[compressionBlockSize]);
+            }
 
             using (var outputWriter = new BinaryWriter(outputCompressed))
             {
@@ -27,6 +33,7 @@ namespace Compress.Lib
 
                 _runningThreads = 0;
                 var currentWorkBlock = 0;
+                byte[] buf = null;
                 while (currentWorkBlock <= workBlocksCount)
                 {
                     if (_runningThreads >= Environment.ProcessorCount)
@@ -35,22 +42,14 @@ namespace Compress.Lib
                         continue;
                     }
 
-                    var buf = new byte[compressionBlockSize];
+                    lock (_threadLock)
+                    {
+                        buf = _buffers.Pop();
+                    }
                     var actualRead = inputUncompressed.Read(buf, 0, compressionBlockSize);
-                    byte[] dataForCompression;
-                    if (actualRead < buf.Length)
-                    {
-                        dataForCompression = new byte[actualRead];
-                        Array.Copy(buf, 0, dataForCompression, 0, actualRead);
-                    }
-                    else
-                    {
-                        dataForCompression = buf;
-                    }
-
                     var compressionWork = new Thread(ThreadCompressWork);
                     compressionWorkThreads.Add(compressionWork);
-                    var compressionWorkData = new ThreadCompressWorkData(currentWorkBlock, dataForCompression, outputWriter);
+                    var compressionWorkData = new ThreadCompressWorkData(currentWorkBlock, buf, actualRead, outputWriter);
                     _runningThreads += 1;
                     compressionWork.Start(compressionWorkData);
                     currentWorkBlock += 1;
@@ -58,6 +57,7 @@ namespace Compress.Lib
                 AwaitRemainingRunningThreads(compressionWorkThreads);
             }
 
+            _buffers.Clear();
             return true;
         }
 
@@ -92,7 +92,7 @@ namespace Compress.Lib
 
                     var decompressionWork = new Thread(ThreadDecompressWork);
                     decompressionWorkThreads.Add(decompressionWork);
-                    var decompressionWorkData = new ThreadDecompressWorkData(blockIndex, blockData, decompressedOutput, blockSize);
+                    var decompressionWorkData = new ThreadDecompressWorkData(blockIndex, blockData, blockSize, decompressedOutput);
                     _runningThreads += 1;
                     decompressionWork.Start(decompressionWorkData);
                     currentWorkBlock += 1;
@@ -129,6 +129,7 @@ namespace Compress.Lib
                 lock (_threadLock)
                 {
                     compressedBlock.CopyTo(threadData.OutputWriter.BaseStream);
+                    _buffers.Push(threadData.DataForCompression);
                     _runningThreads -= 1;
                 }
             }
@@ -156,7 +157,7 @@ namespace Compress.Lib
             {
                 using (GZipStream compressionStream = new GZipStream(compressedOutput, CompressionLevel.Optimal, leaveOpen: true))
                 {
-                    compressionStream.Write(workData.DataForCompression, 0, workData.DataForCompression.Length);
+                    compressionStream.Write(workData.DataForCompression, 0, workData.DataSize);
                 }
                 int compressedDataLength = (int)compressedOutput.Length;
                 using (var binaryWriter = new BinaryWriter(compressedBlockOutput, System.Text.Encoding.Default, leaveOpen: true))
