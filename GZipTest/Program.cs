@@ -6,12 +6,12 @@ using System.Linq;
 
 namespace GZipTest
 {
-    class Program
+    public class Program
     {
         private const string CompressCommand = "compress";
         private const string DecompressCommand = "decompress";
 
-        static void Main(string[] args)
+        public static int Main(string[] args)
         {
             try
             {
@@ -23,6 +23,7 @@ namespace GZipTest
                 {
                     HandleInvalidCall();
                 }
+                return 0;
             }
             catch (Exception e)
             {
@@ -33,6 +34,7 @@ namespace GZipTest
                 Console.WriteLine("Detailed information is below:");
                 Console.WriteLine(e.ToString());
             }
+            return 1;
         }
 
         private static bool IsValidArguments(string[] args)

@@ -9,15 +9,15 @@ namespace Compress.Lib
     public class ParallelCompressor
     {
         private const int ArchiveMagic = 0x00076ED2;
+        private const int DefaultBlockSize = 1024 * 1024;
         private readonly object _threadLock = new object();
         private int _runningThreads;
 
-        public bool Compress(Stream inputUncompressed, Stream outputCompressed, int compressionBlockSize = 1024 * 1024)
+        public bool Compress(Stream inputUncompressed, Stream outputCompressed, int compressionBlockSize = DefaultBlockSize)
         {
             var workBlocksCount = (int)(inputUncompressed.Length / compressionBlockSize);
             workBlocksCount += (inputUncompressed.Length % compressionBlockSize > 0) ? 1 : 0;
             var compressionWorkThreads = new List<Thread>();
-            _runningThreads = 0;
 
             using (var outputWriter = new BinaryWriter(outputCompressed))
             {
@@ -25,6 +25,7 @@ namespace Compress.Lib
                 outputWriter.Write(compressionBlockSize);
                 outputWriter.Write(workBlocksCount);
 
+                _runningThreads = 0;
                 var currentWorkBlock = 0;
                 while (currentWorkBlock <= workBlocksCount)
                 {
@@ -72,7 +73,6 @@ namespace Compress.Lib
                 {
                     throw new ArgumentException("Input stream doesn't appear to be a valid archive data", nameof(inputCompressed));
                 }
-
                 var blockSize = compressedInput.ReadInt32();
                 var blocksCount = compressedInput.ReadInt32();
 
