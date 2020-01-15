@@ -144,34 +144,30 @@ namespace Compress.Lib
 
         public byte[] GetCompressedBlockData(ThreadCompressWorkData workData)
         {
-            var compressedData = CompressData(workData.DataForCompression);
-            using (var ms = new MemoryStream())
-            using (var result = new BinaryWriter(ms))
-            {
-                result.Write(workData.BlockIndex);
-                result.Write(compressedData.Length);
-                result.Write(compressedData);
-                result.Flush();
-                return ms.ToArray();
-            }
-        }
-
-        private byte[] CompressData(byte[] dataUncompressed)
-        {
             using (MemoryStream compressedOutput = new MemoryStream())
             {
                 using (GZipStream compressionStream = new GZipStream(compressedOutput, CompressionLevel.Optimal, leaveOpen: true))
                 {
-                    compressionStream.Write(dataUncompressed, 0, dataUncompressed.Length);
-
+                    compressionStream.Write(workData.DataForCompression, 0, workData.DataForCompression.Length);
                 }
-                return compressedOutput.ToArray();
+                int compressedDataLength = (int)compressedOutput.Length;
+                using (MemoryStream compressedBlockOutput = new MemoryStream(compressedDataLength))
+                {
+                    using (var binaryWriter = new BinaryWriter(compressedBlockOutput))
+                    {
+                        binaryWriter.Write(workData.BlockIndex);
+                        binaryWriter.Write(compressedDataLength);
+                        binaryWriter.Flush();
+                        compressedOutput.Seek(0, SeekOrigin.Begin);
+                        compressedOutput.CopyTo(compressedBlockOutput);
+                        return compressedBlockOutput.ToArray();
+                    }
+                }
             }
         }
 
         private byte[] DecompressData(byte[] dataCompressed)
         {
-
             using (MemoryStream decompressedOutput = new MemoryStream())
             {
                 using (MemoryStream compressedInput = new MemoryStream(dataCompressed))
