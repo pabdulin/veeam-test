@@ -79,11 +79,15 @@ namespace Compress.Lib
         private void ThreadCompressWork(object obj)
         {
             var threadData = (ThreadCompressWorkData)obj;
-            var compressedBlock = GetCompressedBlockData(threadData);
-            lock (_threadLock)
+            using (MemoryStream compressedBlock = new MemoryStream())
             {
-                threadData.OutputWriter.Write(compressedBlock);
-                _runningThreads -= 1;
+                GetCompressedBlockData(threadData, compressedBlock);
+                compressedBlock.Seek(0, SeekOrigin.Begin);
+                lock (_threadLock)
+                {
+                    compressedBlock.CopyTo(threadData.OutputWriter.BaseStream);
+                    _runningThreads -= 1;
+                }
             }
         }
 
@@ -142,7 +146,7 @@ namespace Compress.Lib
             }
         }
 
-        public byte[] GetCompressedBlockData(ThreadCompressWorkData workData)
+        public void GetCompressedBlockData(ThreadCompressWorkData workData, MemoryStream compressedBlockOutput)
         {
             using (MemoryStream compressedOutput = new MemoryStream())
             {
@@ -151,17 +155,12 @@ namespace Compress.Lib
                     compressionStream.Write(workData.DataForCompression, 0, workData.DataForCompression.Length);
                 }
                 int compressedDataLength = (int)compressedOutput.Length;
-                using (MemoryStream compressedBlockOutput = new MemoryStream(compressedDataLength))
+                using (var binaryWriter = new BinaryWriter(compressedBlockOutput, System.Text.Encoding.Default, leaveOpen: true))
                 {
-                    using (var binaryWriter = new BinaryWriter(compressedBlockOutput))
-                    {
-                        binaryWriter.Write(workData.BlockIndex);
-                        binaryWriter.Write(compressedDataLength);
-                        binaryWriter.Flush();
-                        compressedOutput.Seek(0, SeekOrigin.Begin);
-                        compressedOutput.CopyTo(compressedBlockOutput);
-                        return compressedBlockOutput.ToArray();
-                    }
+                    binaryWriter.Write(workData.BlockIndex);
+                    binaryWriter.Write(compressedDataLength);
+                    compressedOutput.Seek(0, SeekOrigin.Begin);
+                    compressedOutput.CopyTo(binaryWriter.BaseStream);
                 }
             }
         }
