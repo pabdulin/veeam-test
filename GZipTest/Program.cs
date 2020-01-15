@@ -1,41 +1,103 @@
-﻿using System;
+﻿using Compress.Lib;
+using System;
+using System.Diagnostics;
 using System.IO;
+using System.Linq;
 
 namespace GZipTest
 {
     class Program
     {
+        private const string CompressCommand = "compress";
+        private const string DecompressCommand = "decompress";
+
         static void Main(string[] args)
         {
-            var blockSize = 1024 * 1024;
+            try
+            {
+                if (IsValidArguments(args))
+                {
+                    HandleValidCall(args);
+                }
+                else
+                {
+                    HandleInvalidCall();
+                }
+            }
+            catch (Exception e)
+            {
+                Console.WriteLine();
+                Console.WriteLine("Where was an error while trying to execute the program. The error message was:");
+                Console.WriteLine(e.Message);
+                Console.WriteLine();
+                Console.WriteLine("Detailed information is below:");
+                Console.WriteLine(e.ToString());
+            }
+        }
+
+        private static bool IsValidArguments(string[] args)
+        {
+            var knownCommands = new[] { CompressCommand, DecompressCommand };
             if (args.Length == 3)
             {
                 var op = args[0];
-                var inputFile = args[1];
-                var outputFile = args[2];
-                if (string.Compare(op, "compress", StringComparison.OrdinalIgnoreCase) == 0)
+                if (knownCommands.Contains(op, StringComparer.OrdinalIgnoreCase))
                 {
-                    var pc = new Compress.Lib.ParallelCompressor(blockSize);
-                    using (var inStream = File.OpenRead(inputFile))
-                    using (var outStream = File.OpenWrite(outputFile))
-                    {
-                        pc.Compress(inStream, outStream);
-                    }
+                    return true;
                 }
-                else if (string.Compare(op, "decompress", StringComparison.OrdinalIgnoreCase) == 0)
+                else
                 {
-                    var pc = new Compress.Lib.ParallelCompressor(blockSize);
-                    using (var inStream = File.OpenRead(inputFile))
-                    using (var outStream = File.OpenWrite(outputFile))
-                    {
-                        pc.Decompress(inStream, outStream);
-                    }
+                    Console.WriteLine($"Command '{op}' is unknown. Possible commands are: '{string.Join("', '", knownCommands)}'.");
                 }
             }
-            else
+
+            return false;
+        }
+
+        private static void HandleInvalidCall()
+        {
+            Console.WriteLine("Unexpected arguments. Usage:");
+            Console.WriteLine("GZipTest [de]compress input.file output.file");
+        }
+
+        private static void HandleValidCall(string[] args)
+        {
+            var op = args[0];
+            var inputFile = args[1];
+            var outputFile = args[2];
+            Stopwatch timer = new Stopwatch();
+            Console.WriteLine($"Executing command '{op}' using up to {Environment.ProcessorCount} threads.");
+            timer.Restart();
+            if (string.Compare(op, CompressCommand, StringComparison.OrdinalIgnoreCase) == 0)
             {
-                Console.WriteLine("Unexpected arguments count. Usage:");
-                Console.WriteLine("GZipTest [de]compress input.file output.file");
+                CompressFile(inputFile, outputFile);
+            }
+            else if (string.Compare(op, DecompressCommand, StringComparison.OrdinalIgnoreCase) == 0)
+            {
+                DecompressFile(inputFile, outputFile);
+            }
+            timer.Stop();
+            Console.WriteLine($"Operation completed in {timer.Elapsed.ToString()}.");
+
+        }
+
+        private static void DecompressFile(string inputFile, string outputFile)
+        {
+            var pc = new ParallelCompressor();
+            using (var inStream = new FileStream(inputFile, FileMode.Open, FileAccess.Read))
+            using (var outStream = new FileStream(outputFile, FileMode.Create, FileAccess.Write))
+            {
+                pc.Decompress(inStream, outStream);
+            }
+        }
+
+        private static void CompressFile(string inputFile, string outputFile)
+        {
+            var pc = new ParallelCompressor();
+            using (var inStream = new FileStream(inputFile, FileMode.Open, FileAccess.Read))
+            using (var outStream = new FileStream(outputFile, FileMode.Create, FileAccess.Write))
+            {
+                pc.Compress(inStream, outStream);
             }
         }
     }
